@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import (
+    Callable,
+    Iterable,
+    Mapping,
+)
 from dataclasses import dataclass
 from functools import partial
 from html import escape
@@ -23,7 +27,9 @@ Child = str | Element
 
 
 def _create_element(
-    name: str, attributes: tuple[tuple[str, str], ...], children: Iterable[Child]
+    name: str,
+    attributes: tuple[tuple[str, str], ...],
+    children: Iterable[Child],
 ) -> Element:
     children = tuple(children)
     if name.lower() in VOID_ELEMENTS and children:
@@ -31,12 +37,16 @@ def _create_element(
     return Element(name, attributes, children)
 
 
-def tag(name: str) -> Callable[[Mapping[str, str]], Callable[[Iterable[Child]], Element]]:
+def tag(
+    name: str,
+) -> Callable[[Mapping[str, str]], Callable[[Iterable[Child]], Element]]:
     """Build an element in three stages: tag(name)(attributes)(children)."""
     if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9-]*", name):
         raise ValueError(f"Invalid tag name: {name!r}")
 
-    def with_attributes(attributes: Mapping[str, str]) -> Callable[[Iterable[Child]], Element]:
+    def with_attributes(
+        attributes: Mapping[str, str],
+    ) -> Callable[[Iterable[Child]], Element]:
         pairs = tuple(attributes.items())
         for key, _ in pairs:
             if not re.fullmatch(r"[a-zA-Z_:][a-zA-Z0-9_.:-]*", key):
@@ -62,31 +72,48 @@ def render(node: Child) -> str:
     return f"{opening}{contents}</{node.name}>"
 
 
+def render_procedural(node: Child) -> str:
+    if isinstance(node, str):
+        return escape(node, quote=False)
+
+    markup = f"<{node.name}"
+    for name, value in node.attributes:
+        markup = f'{markup} {name}="{escape(value)}"'
+    markup = f"{markup}>"
+    if node.name.lower() in VOID_ELEMENTS:
+        return markup
+
+    for child in node.children:
+        child_html = render_procedural(child)
+        markup = markup + child_html
+    return f"{markup}</{node.name}>"
+
+
 def main() -> None:
     title = "DSL pentru generarea HTML"
-    item = tag("li")({"class": "feature"})
+    charset = tag("meta")({"charset": "utf-8"})([])
+    tab_title = tag("title")({})([title])
+    head = tag("head")({})([charset, tab_title])
 
-    page = tag("html")({"lang": "ro"})([
-        tag("head")({})([
-            tag("meta")({"charset": "utf-8"})([]),
-            tag("title")({})([title]),
-        ]),
-        tag("body")({})([
-            tag("h1")({})([title]),
-            tag("p")({})([
-                "Exemplu pentru ",
-                tag("strong")({})(["biletul nr. 19"]),
-                ". Text cu caractere speciale: 2 < 3 & 4 > 1.",
-            ]),
-            tag("ul")({})([
-                item(["Currying"]),
-                item(["Aplicarea parțială a funcțiilor"]),
-            ]),
-        ]),
+    heading = tag("h1")({})([title])
+    ticket = tag("strong")({})(["biletul nr. 19"])
+    intro = tag("p")({})([
+        "Exemplu pentru ",
+        ticket,
+        ". Text cu caractere speciale: 2 < 3 & 4 > 1.",
     ])
 
+    item = tag("li")({"class": "feature"})
+    topics = tag("ul")({})([
+        item(["Currying"]),
+        item(["Aplicarea parțială a funcțiilor"]),
+    ])
+    body = tag("body")({})([heading, intro, topics])
+    page = tag("html")({"lang": "ro"})([head, body])
+
+    html = render_procedural(page)
     print("<!doctype html>")
-    print(render(page))
+    print(html)
 
 
 if __name__ == "__main__":
